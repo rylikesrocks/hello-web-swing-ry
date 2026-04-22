@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.example.hellowebswing.HelloWebSwingApplicationTests
--------------------------------------------------------------------------------
-Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.672 s -- in com.example.hellowebswing.HelloWebSwingApplicationTests

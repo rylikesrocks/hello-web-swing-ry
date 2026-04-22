@@ -1,2 +1,6 @@
-com/example/hellowebswing/HelloController.class
+com/example/hellowebswing/GameRestController.class
+com/example/hellowebswing/GameLoopService.class
 com/example/hellowebswing/HelloWebSwingApplication.class
+com/example/hellowebswing/Enemy.class
+com/example/hellowebswing/GameService.class
+com/example/hellowebswing/GameModel.class

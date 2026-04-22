@@ -14,8 +14,8 @@
     <groupId>com.example</groupId>
     <artifactId>hello-web-swing</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>hello-web-swing</name>
-    <description>Simple Hello World Spring Boot app</description>
+    <name>RPG Dungeon Crawler</name>
+    <description>Top-down dungeon crawler game in the style of Legend of Zelda</description>
 
     <properties>
         <java.version>17</java.version>

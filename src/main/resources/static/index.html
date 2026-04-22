@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPG Dungeon Crawler</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <h1>RPG Dungeon Crawler</h1>
+        
+        <div class="game-info">
+            <div class="health-container">
+                <label>Health:</label>
+                <div class="health-bar">
+                    <div id="healthFill" class="health-fill"></div>
+                </div>
+                <span id="healthText">100/100</span>
+            </div>
+        </div>
+        
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div class="controls">
+            <p>Use Arrow Keys or WASD to move</p>
+            <button id="damageBtn">Take Damage (10)</button>
+            <button id="healBtn">Heal (20)</button>
+            <button id="resetBtn">Reset Game</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
