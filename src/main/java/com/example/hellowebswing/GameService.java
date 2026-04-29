@@ -32,6 +32,13 @@ public class GameService {
     }
     
     /**
+     * Get the list of doors in the current room.
+     */
+    public List<Door> getDoors() {
+        return gameModel.getCurrentRoom().getDoors();
+    }
+    
+    /**
      * Update all enemies in the game.
      */
     public void updateEnemies() {

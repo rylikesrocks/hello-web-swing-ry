@@ -1,17 +1,25 @@
 // Game configuration
 const GAME_API_URL = '/api/game';
-const TILE_SIZE = 20;
-const DUNGEON_WIDTH = 40;
-const DUNGEON_HEIGHT = 30;
+const TILE_SIZE = 40;
+const DUNGEON_WIDTH = 20;
+const DUNGEON_HEIGHT = 15;
 const TARGET_FPS = 60;
 const FRAME_TIME = 1000 / TARGET_FPS; // ~16.67ms per frame
+const INPUT_TICK_RATE = 10; // Process one buffered input every 10 frames (6 inputs/sec max)
+const ENEMY_FETCH_RATE = 5; // Fetch enemies every 5 frames (~12 fps enemy update)
 
 // Game state
 let gameState = null;
 let enemies = [];
+let doors = [];
 let canvas = null;
 let ctx = null;
 let lastFrameTime = 0;
+
+// Input buffering
+let pressedKeys = new Set();
+let inputTickCounter = 0;
+let enemyTickCounter = 0;
 
 // Initialize the game when the page loads
 window.addEventListener('DOMContentLoaded', () => {
@@ -27,7 +35,21 @@ function initializeGame() {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
     
-    // Start the game loop (handles fetching state and rendering)
+    // Fetch initial game state, enemies, and doors
+    Promise.all([
+        fetch(`${GAME_API_URL}/state`).then(r => r.json()),
+        fetch(`${GAME_API_URL}/enemies`).then(r => r.json()),
+        fetch(`${GAME_API_URL}/doors`).then(r => r.json())
+    ])
+    .then(([state, enemyList, doorList]) => {
+        gameState = state;
+        enemies = enemyList;
+        doors = doorList;
+        updateUI();
+    })
+    .catch(error => console.error('Error initializing game:', error));
+    
+    // Start the game loop
     gameLoop(0);
 }
 
@@ -65,14 +87,15 @@ function setupEventListeners() {
             .catch(error => console.error('Error:', error));
     });
     
-    // Keyboard movement
-    document.addEventListener('keydown', handleKeyPress);
+    // Keyboard movement - buffer key presses instead of sending requests immediately
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
 }
 
 /**
- * Handle keyboard input for player movement
+ * Handle keyboard key down - buffer the key press
  */
-function handleKeyPress(event) {
+function handleKeyDown(event) {
     let direction = null;
     
     switch(event.key) {
@@ -105,12 +128,52 @@ function handleKeyPress(event) {
     }
     
     if (direction) {
-        movePlayer(direction);
+        pressedKeys.add(direction);
     }
 }
 
 /**
- * Send a move request to the server
+ * Handle keyboard key up - stop tracking this key
+ */
+function handleKeyUp(event) {
+    let direction = null;
+    
+    switch(event.key) {
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+            direction = 'up';
+            event.preventDefault();
+            break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+            direction = 'down';
+            event.preventDefault();
+            break;
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+            direction = 'left';
+            event.preventDefault();
+            break;
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+            direction = 'right';
+            event.preventDefault();
+            break;
+        default:
+            return;
+    }
+    
+    if (direction) {
+        pressedKeys.delete(direction);
+    }
+}
+
+/**
+ * Send a move request to the server and fetch updated game state, enemies, and doors
  */
 function movePlayer(direction) {
     fetch(`${GAME_API_URL}/move?direction=${direction}`, { method: 'POST' })
@@ -118,8 +181,34 @@ function movePlayer(direction) {
         .then(data => {
             gameState = data;
             updateUI();
+            // Also fetch enemies and doors to get their updated positions
+            Promise.all([
+                fetch(`${GAME_API_URL}/enemies`).then(r => r.json()),
+                fetch(`${GAME_API_URL}/doors`).then(r => r.json())
+            ])
+            .then(([enemyList, doorList]) => {
+                enemies = enemyList;
+                doors = doorList;
+            })
+            .catch(error => console.error('Error fetching enemies/doors:', error));
         })
         .catch(error => console.error('Error:', error));
+}
+
+/**
+ * Fetch the latest game state and enemies from the server
+ */
+function fetchGameState() {
+    Promise.all([
+        fetch(`${GAME_API_URL}/state`).then(r => r.json()),
+        fetch(`${GAME_API_URL}/enemies`).then(r => r.json())
+    ])
+    .then(([state, enemyList]) => {
+        gameState = state;
+        enemies = enemyList;
+        updateUI();
+    })
+    .catch(error => console.error('Error fetching game state:', error));
 }
 
 /**
@@ -146,8 +235,9 @@ function updateUI() {
 }
 
 /**
- * Main game loop - runs at 60 FPS with delta time management.
- * Fetches game state and enemies each frame.
+ * Main game loop - runs at 60 FPS with buffered input processing and periodic enemy fetching.
+ * Processes one buffered input every INPUT_TICK_RATE frames to prevent request spam.
+ * Fetches enemy positions every ENEMY_FETCH_RATE frames to show their movement.
  */
 function gameLoop(currentTime) {
     // Calculate delta time
@@ -158,18 +248,35 @@ function gameLoop(currentTime) {
     const deltaTime = currentTime - lastFrameTime;
     lastFrameTime = currentTime;
     
-    // Fetch latest game state each frame
-    Promise.all([
-        fetch(`${GAME_API_URL}/state`).then(r => r.json()),
-        fetch(`${GAME_API_URL}/enemies`).then(r => r.json())
-    ])
-    .then(([state, enemyList]) => {
-        gameState = state;
-        enemies = enemyList;
-        updateUI();
-        render();
-    })
-    .catch(error => console.error('Error fetching game state:', error));
+    // Process buffered input at controlled rate
+    inputTickCounter++;
+    if (inputTickCounter >= INPUT_TICK_RATE && pressedKeys.size > 0) {
+        inputTickCounter = 0;
+        
+        // Get the first direction from the buffer and send it
+        const direction = pressedKeys.values().next().value;
+        movePlayer(direction);
+    }
+    
+    // Fetch enemies and doors periodically to show their movement and room state
+    enemyTickCounter++;
+    if (enemyTickCounter >= ENEMY_FETCH_RATE) {
+        enemyTickCounter = 0;
+        
+        // Fetch enemies and doors to update their positions
+        Promise.all([
+            fetch(`${GAME_API_URL}/enemies`).then(r => r.json()),
+            fetch(`${GAME_API_URL}/doors`).then(r => r.json())
+        ])
+        .then(([enemyList, doorList]) => {
+            enemies = enemyList;
+            doors = doorList;
+        })
+        .catch(error => console.error('Error fetching enemies/doors:', error));
+    }
+    
+    // Render every frame
+    render();
     
     // Schedule next frame
     requestAnimationFrame(gameLoop);
@@ -188,6 +295,9 @@ function render() {
     // Draw dungeon background
     drawDungeon();
     
+    // Draw doors
+    drawDoors();
+    
     // Draw enemies
     drawEnemies();
     
@@ -202,13 +312,48 @@ function render() {
  * Draw the dungeon background
  */
 function drawDungeon() {
-    ctx.fillStyle = '#333333';
+    ctx.fillStyle = '#8D8C86';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Draw dungeon border
-    ctx.strokeStyle = '#666666';
+    ctx.strokeStyle = '#3a3a3a';
     ctx.lineWidth = 2;
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
+}
+
+/**
+ * Draw all doors in the current room
+ */
+function drawDoors() {
+    if (!doors || doors.length === 0) return;
+    
+    for (let door of doors) {
+        // Draw first tile of door
+        const doorx1 = door.x1 * TILE_SIZE;
+        const doory1 = door.y1 * TILE_SIZE;
+        
+        // Draw door with distinct color (cyan/bright blue)
+        ctx.fillStyle = 'rgba(0, 200, 255, 0.6)';
+        ctx.fillRect(doorx1, doory1, TILE_SIZE, TILE_SIZE);
+        
+        // Draw door border
+        ctx.strokeStyle = '#00D4FF';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(doorx1, doory1, TILE_SIZE, TILE_SIZE);
+        
+        // Draw second tile of door if different positions
+        if (door.x1 !== door.x2 || door.y1 !== door.y2) {
+            const doorx2 = door.x2 * TILE_SIZE;
+            const doory2 = door.y2 * TILE_SIZE;
+            
+            ctx.fillStyle = 'rgba(0, 200, 255, 0.6)';
+            ctx.fillRect(doorx2, doory2, TILE_SIZE, TILE_SIZE);
+            
+            ctx.strokeStyle = '#00D4FF';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(doorx2, doory2, TILE_SIZE, TILE_SIZE);
+        }
+    }
 }
 
 /**
@@ -251,7 +396,7 @@ function drawEnemies() {
  * Draw grid for visualization (optional)
  */
 function drawGrid() {
-    ctx.strokeStyle = 'rgba(100, 100, 100, 0.2)';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.lineWidth = 0.5;
     
     for (let i = 0; i <= DUNGEON_WIDTH; i++) {

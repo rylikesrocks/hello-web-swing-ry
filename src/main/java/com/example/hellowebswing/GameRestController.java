@@ -34,6 +34,14 @@ public class GameRestController {
     }
     
     /**
+     * Get the list of doors in the current room.
+     */
+    @GetMapping("/doors")
+    public List<Door> getDoors() {
+        return gameService.getDoors();
+    }
+    
+    /**
      * Handle player movement input.
      * Player input is processed by the controller and delegated to the model.
      * Enemy movement is handled by the game loop independently.
