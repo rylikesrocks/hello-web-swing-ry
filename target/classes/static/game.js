@@ -16,6 +16,11 @@ let canvas = null;
 let ctx = null;
 let lastFrameTime = 0;
 
+// Enemy position interpolation
+let previousEnemies = [];
+let lastEnemyFetchTime = 0;
+let enemyInterpolationFactor = 0; // 0 to 1, how far between previous and current positions
+
 // Input buffering
 let pressedKeys = new Set();
 let inputTickCounter = 0;
@@ -262,6 +267,11 @@ function gameLoop(currentTime) {
     enemyTickCounter++;
     if (enemyTickCounter >= ENEMY_FETCH_RATE) {
         enemyTickCounter = 0;
+        lastEnemyFetchTime = currentTime;
+        enemyInterpolationFactor = 0;
+        
+        // Save previous enemy positions for interpolation
+        previousEnemies = enemies.map(e => ({x: e.x, y: e.y}));
         
         // Fetch enemies and doors to update their positions
         Promise.all([
@@ -273,6 +283,11 @@ function gameLoop(currentTime) {
             doors = doorList;
         })
         .catch(error => console.error('Error fetching enemies/doors:', error));
+    } else {
+        // Update interpolation factor between fetches
+        const timeSinceLastFetch = currentTime - lastEnemyFetchTime;
+        const fetchInterval = (1000 / 60) * ENEMY_FETCH_RATE;  // Time between fetches in ms
+        enemyInterpolationFactor = Math.min(1, timeSinceLastFetch / fetchInterval);
     }
     
     // Render every frame
@@ -374,12 +389,23 @@ function drawPlayer() {
 }
 
 /**
- * Draw all enemies
+ * Draw all enemies with smooth interpolation between server updates
  */
 function drawEnemies() {
-    for (let enemy of enemies) {
-        const enemyScreenX = enemy.x * TILE_SIZE;
-        const enemyScreenY = enemy.y * TILE_SIZE;
+    for (let i = 0; i < enemies.length; i++) {
+        let enemy = enemies[i];
+        let enemyScreenX = enemy.x * TILE_SIZE;
+        let enemyScreenY = enemy.y * TILE_SIZE;
+        
+        // Apply interpolation if we have previous positions
+        if (previousEnemies.length > i && previousEnemies[i] && enemyInterpolationFactor < 1) {
+            const prevX = previousEnemies[i].x;
+            const prevY = previousEnemies[i].y;
+            
+            // Linear interpolation between previous and current position
+            enemyScreenX = (prevX + (enemy.x - prevX) * enemyInterpolationFactor) * TILE_SIZE;
+            enemyScreenY = (prevY + (enemy.y - prevY) * enemyInterpolationFactor) * TILE_SIZE;
+        }
         
         // Draw enemy as a red square
         ctx.fillStyle = '#F44336';

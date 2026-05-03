@@ -18,6 +18,10 @@ public class GameModel {
     private int playerX;
     private int playerY;
     
+    // Track player position in dungeon grid
+    private int playerRoomX;
+    private int playerRoomY;
+    
     private Room currentRoom;
     private Map<String, Room> rooms;
     
@@ -34,25 +38,40 @@ public class GameModel {
         this.rooms = new HashMap<>();
         initializeRooms();
         
-        // Start in the main dungeon room
-        this.currentRoom = rooms.get("dungeon_main");
+        // Start in the center of the dungeon (0, 0)
+        this.playerRoomX = 0;
+        this.playerRoomY = 0;
+        this.currentRoom = rooms.get(getRoomKey(0, 0));
     }
     
     /**
-     * Initialize all dungeon rooms.
+     * Initialize all 9 dungeon rooms in a 3x3 grid.
+     * Grid coordinates: X and Y range from -1 to 1.
+     * Center room is at (0, 0).
      */
     private void initializeRooms() {
-        // Main dungeon room
-        Room mainDungeon = new Room("dungeon_main");
-        mainDungeon.addEnemy(new Enemy(15, 7, 30, 10));
-        mainDungeon.addEnemy(new Enemy(10, 12, 30, 10));
-        rooms.put("dungeon_main", mainDungeon);
-        
-        // Additional rooms (for now, just empty rooms)
-        rooms.put("dungeon_top", new Room("dungeon_top"));
-        rooms.put("dungeon_bottom", new Room("dungeon_bottom"));
-        rooms.put("dungeon_left", new Room("dungeon_left"));
-        rooms.put("dungeon_right", new Room("dungeon_right"));
+        // Create a 3x3 grid of rooms
+        for (int x = -1; x <= 1; x++) {
+            for (int y = -1; y <= 1; y++) {
+                String key = getRoomKey(x, y);
+                Room room = new Room(key, x, y);
+                rooms.put(key, room);
+                
+                // Add enemies only to certain rooms for variety
+                if (x == 0 && y == 0) {
+                    // Center room with some enemies
+                    room.addEnemy(new Enemy(15, 7, 30, 10));
+                    room.addEnemy(new Enemy(10, 12, 30, 10));
+                }
+            }
+        }
+    }
+    
+    /**
+     * Get the unique key for a room at the given coordinates.
+     */
+    private String getRoomKey(int x, int y) {
+        return "dungeon_" + x + "_" + y;
     }
     
     // Getters
@@ -70,6 +89,14 @@ public class GameModel {
     
     public int getPlayerY() {
         return playerY;
+    }
+    
+    public int getPlayerRoomX() {
+        return playerRoomX;
+    }
+    
+    public int getPlayerRoomY() {
+        return playerRoomY;
     }
     
     /**
@@ -127,31 +154,46 @@ public class GameModel {
      * Transition to an adjacent room through a door.
      */
     private void transitionRoom(Door door) {
-        String nextRoomId = getNextRoomId(door.getSide());
-        if (nextRoomId != null && rooms.containsKey(nextRoomId)) {
-            currentRoom = rooms.get(nextRoomId);
+        // Calculate the next room position based on the door side
+        int nextRoomX = playerRoomX;
+        int nextRoomY = playerRoomY;
+        
+        switch (door.getSide()) {
+            case TOP:
+                nextRoomY--;
+                break;
+            case BOTTOM:
+                nextRoomY++;
+                break;
+            case LEFT:
+                nextRoomX--;
+                break;
+            case RIGHT:
+                nextRoomX++;
+                break;
+        }
+        
+        // Check if the next room exists
+        String nextRoomKey = getRoomKey(nextRoomX, nextRoomY);
+        if (rooms.containsKey(nextRoomKey)) {
+            // Disable the door we just used in the current room
+            currentRoom.disableDoor(door.getSide());
+            
+            // Enable the opposite door in the current room (so player can come back)
+            // Actually no - we already created the room with the opposite door disabled
+            // We need to enable the door the player is leaving FROM in the current room
+            
+            // Move to the next room
+            currentRoom = rooms.get(nextRoomKey);
+            playerRoomX = nextRoomX;
+            playerRoomY = nextRoomY;
             
             // Teleport player to opposite side of new room
             Door.Side oppositeSide = door.getOppositeSide();
             teleportToOppositeSide(oppositeSide);
-        }
-    }
-    
-    /**
-     * Get the next room ID based on the door side.
-     */
-    private String getNextRoomId(Door.Side side) {
-        switch (side) {
-            case TOP:
-                return "dungeon_top";
-            case BOTTOM:
-                return "dungeon_bottom";
-            case LEFT:
-                return "dungeon_left";
-            case RIGHT:
-                return "dungeon_right";
-            default:
-                return null;
+            
+            // Enable the door we came through in the new room (so player can go back)
+            currentRoom.enableDoor(oppositeSide);
         }
     }
     
@@ -210,7 +252,7 @@ public class GameModel {
      */
     public void updateEnemies() {
         for (Enemy enemy : currentRoom.getEnemies()) {
-            if (enemy.updateWithPlayerPosition(playerX, playerY, currentRoom)) {
+            if (enemy.updateWithPlayerPosition(getPlayerX(), getPlayerY(), currentRoom)) {
                 damagePlayer(enemy.getDamage());
             }
         }

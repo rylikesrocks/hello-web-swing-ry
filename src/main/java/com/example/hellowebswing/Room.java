@@ -41,30 +41,30 @@ public class Room {
      * Initialize doors in the center of each side.
      * Top/Bottom doors: 2x1 (tiles 9-10 on their respective rows)
      * Left/Right doors: 1x2 (tiles on their columns, rows 7-8)
-     * Disables doors based on room position constraints (max 2 rooms in each direction).
+     * Disables doors based on dungeon boundaries (3x3 grid, range -1 to 1).
      */
     private void initializeDoors() {
-        // Top door (center top, 2 tiles wide) - disabled if at topmost room (roomY == -2)
+        // Top door (center top, 2 tiles wide) - disabled if at topmost room (roomY == -1)
         Door topDoor = new Door(9, 0, 10, 0, Door.Side.TOP);
-        if (roomY > -2) {
+        if (roomY > -1) {
             doors.add(topDoor);
         }
         
-        // Bottom door (center bottom, 2 tiles wide) - disabled if at bottommost room (roomY == 2)
+        // Bottom door (center bottom, 2 tiles wide) - disabled if at bottommost room (roomY == 1)
         Door bottomDoor = new Door(9, 14, 10, 14, Door.Side.BOTTOM);
-        if (roomY < 2) {
+        if (roomY < 1) {
             doors.add(bottomDoor);
         }
         
-        // Left door (center left, 2 tiles tall) - disabled if at leftmost room (roomX == -2)
+        // Left door (center left, 2 tiles tall) - disabled if at leftmost room (roomX == -1)
         Door leftDoor = new Door(0, 7, 0, 8, Door.Side.LEFT);
-        if (roomX > -2) {
+        if (roomX > -1) {
             doors.add(leftDoor);
         }
         
-        // Right door (center right, 2 tiles tall) - disabled if at rightmost room (roomX == 2)
+        // Right door (center right, 2 tiles tall) - disabled if at rightmost room (roomX == 1)
         Door rightDoor = new Door(19, 7, 19, 8, Door.Side.RIGHT);
-        if (roomX < 2) {
+        if (roomX < 1) {
             doors.add(rightDoor);
         }
     }
@@ -121,5 +121,29 @@ public class Room {
     
     public int getRoomY() {
         return roomY;
+    }
+    
+    /**
+     * Disable a door by its side.
+     */
+    public void disableDoor(Door.Side side) {
+        for (Door door : doors) {
+            if (door.getSide() == side) {
+                door.setActive(false);
+                return;
+            }
+        }
+    }
+    
+    /**
+     * Enable a door by its side.
+     */
+    public void enableDoor(Door.Side side) {
+        for (Door door : doors) {
+            if (door.getSide() == side) {
+                door.setActive(true);
+                return;
+            }
+        }
     }
 }

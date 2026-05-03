@@ -11,8 +11,8 @@ public class Enemy {
     private int health;
     private int maxHealth;
     private int damage;
-    private int x;
-    private int y;
+    private double x;  // Now uses decimal positions for smooth movement
+    private double y;
     private static final Random random = new Random();
     
     // Game boundaries
@@ -38,8 +38,7 @@ public class Enemy {
     private Direction currentDirection;
     private int spacesMovedInDirection;
     private int spacesUntilSwitch;  // random interval (5-12) before switching direction
-    private int moveTickCounter;    // counter to slow down movement (move every N ticks)
-    private static final int MOVE_FREQUENCY = 10;  // Move every 10 game ticks (~6 moves/sec at 60 FPS)
+    private static final double MOVEMENT_SPEED = 0.1;  // Move 0.1 tiles per tick for smooth gliding
     
     /**
      * Create an enemy at the specified position.
@@ -55,7 +54,6 @@ public class Enemy {
         this.currentDirection = Direction.values()[random.nextInt(Direction.values().length)];
         this.spacesMovedInDirection = 0;
         this.spacesUntilSwitch = random.nextInt(8) + 5; // Random 5-12
-        this.moveTickCounter = 0;
     }
     
     // Getters
@@ -72,10 +70,18 @@ public class Enemy {
     }
     
     public int getX() {
-        return x;
+        return (int) Math.round(x);
     }
     
     public int getY() {
+        return (int) Math.round(y);
+    }
+    
+    public double getXRaw() {
+        return x;
+    }
+    
+    public double getYRaw() {
         return y;
     }
     
@@ -89,7 +95,7 @@ public class Enemy {
     /**
      * Update enemy movement and handle collisions with player.
      * Returns true if the enemy damaged the player, false otherwise.
-     * Movement is throttled to move every MOVE_FREQUENCY ticks for slower, more controllable movement.
+     * Enemies move smoothly at MOVEMENT_SPEED per tick for continuous gliding.
      */
     public boolean update(GameModel gameModel) {
         // This method is kept for backward compatibility with GameLoopService
@@ -99,55 +105,47 @@ public class Enemy {
     /**
      * Update enemy movement with specific player position and room.
      * Returns true if the enemy damaged the player, false otherwise.
+     * Moves smoothly using decimal positions.
      */
     public boolean updateWithPlayerPosition(int playerX, int playerY, Room room) {
         boolean damagedPlayer = false;
         
-        // Increment tick counter and only move if we've hit the move frequency
-        moveTickCounter++;
-        if (moveTickCounter < MOVE_FREQUENCY) {
-            return false;  // Don't move this tick
-        }
-        
-        // Reset tick counter and proceed with movement
-        moveTickCounter = 0;
-        
-        // Calculate new position based on current direction
-        int newX = x + currentDirection.dx;
-        int newY = y + currentDirection.dy;
+        // Calculate new position based on current direction (fractional movement)
+        double newX = x + (currentDirection.dx * MOVEMENT_SPEED);
+        double newY = y + (currentDirection.dy * MOVEMENT_SPEED);
         
         // Get boundaries (use room if provided, otherwise use class constants)
-        int maxX = (room != null) ? Room.ROOM_WIDTH : MAX_X;
-        int maxY = (room != null) ? Room.ROOM_HEIGHT : MAX_Y;
+        double maxX = (room != null) ? Room.ROOM_WIDTH : MAX_X;
+        double maxY = (room != null) ? Room.ROOM_HEIGHT : MAX_Y;
         
         // Check bounds and bounce off edges
         if (newX < 0 || newX >= maxX) {
             currentDirection = (currentDirection == Direction.LEFT) ? Direction.RIGHT : Direction.LEFT;
-            newX = x + currentDirection.dx;
+            newX = x + (currentDirection.dx * MOVEMENT_SPEED);
         }
         if (newY < 0 || newY >= maxY) {
             currentDirection = (currentDirection == Direction.UP) ? Direction.DOWN : Direction.UP;
-            newY = y + currentDirection.dy;
+            newY = y + (currentDirection.dy * MOVEMENT_SPEED);
         }
         
-        // Check if moving into player
-        if (newX == playerX && newY == playerY) {
-            if (room != null) {
-                // If in a room context, don't directly damage; let room handle it
-                damagedPlayer = true;
-            }
+        // Check if current position is close to player (within 0.5 tiles)
+        int currentTileX = (int) Math.round(newX);
+        int currentTileY = (int) Math.round(newY);
+        
+        if (currentTileX == playerX && currentTileY == playerY) {
+            damagedPlayer = true;
         } else {
             // Move to the new position
             x = newX;
             y = newY;
-        }
-        
-        // Increment spaces moved in current direction
-        spacesMovedInDirection++;
-        
-        // Check if it's time to switch direction
-        if (spacesMovedInDirection >= spacesUntilSwitch) {
-            chooseNewDirection();
+            
+            // Increment spaces moved (track progress for direction changes)
+            spacesMovedInDirection += MOVEMENT_SPEED;
+            
+            // Check if it's time to switch direction (crossed a tile boundary)
+            if (spacesMovedInDirection >= spacesUntilSwitch) {
+                chooseNewDirection();
+            }
         }
         
         return damagedPlayer;
