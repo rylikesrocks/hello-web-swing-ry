@@ -19,6 +19,7 @@ public class GameRestController {
     
     /**
      * Get the current game state (for the view to render).
+     * GameModel now includes invulnerability data.
      */
     @GetMapping("/state")
     public GameModel getGameState() {

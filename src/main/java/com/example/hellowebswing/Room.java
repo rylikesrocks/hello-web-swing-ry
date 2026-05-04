@@ -110,6 +110,31 @@ public class Room {
             enemy.updateWithPlayerPosition(playerX, playerY, this);
         }
     }
+
+    /**
+     * Check if all enemies in the room have been defeated.
+     */
+    public boolean areAllEnemiesDefeated() {
+        if (enemies.isEmpty()) {
+            return true;
+        }
+        for (Enemy enemy : enemies) {
+            if (enemy.getHealth() > 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Update door active state and visibility based on whether enemies are defeated.
+     */
+    public void updateDoorStates() {
+        boolean enemiesDefeated = areAllEnemiesDefeated();
+        for (Door door : doors) {
+            door.setActive(enemiesDefeated);
+        }
+    }
     
     public String getRoomId() {
         return roomId;

@@ -20,7 +20,7 @@ public class Enemy {
     private static final int MAX_Y = 15;
     
     // Movement pattern - one of: UP, DOWN, LEFT, RIGHT
-    private enum Direction {
+    public enum Direction {
         UP(0, -1),
         DOWN(0, 1),
         LEFT(-1, 0),
@@ -39,6 +39,11 @@ public class Enemy {
     private int spacesMovedInDirection;
     private int spacesUntilSwitch;  // random interval (5-12) before switching direction
     private static final double MOVEMENT_SPEED = 0.1;  // Move 0.1 tiles per tick for smooth gliding
+    
+    // Knockback mechanics
+    private int knockbackDistance = 0;  // Distance remaining to knockback
+    private Direction knockbackDirection = null;  // Direction of knockback
+    private static final int KNOCKBACK_DISTANCE = 2;  // Knockback 2 squares when hit
     
     /**
      * Create an enemy at the specified position.
@@ -86,7 +91,26 @@ public class Enemy {
     }
     
     /**
-     * Apply damage to the enemy.
+     * Apply damage to the enemy and trigger knockback.
+     * Enemy moves back 2 squares in the opposite direction from the attacker.
+     */
+    public void takeDamage(int damage, Direction attackDirection) {
+        this.health = Math.max(0, this.health - damage);
+        // Apply knockback in opposite direction
+        if (attackDirection == Direction.LEFT) {
+            this.knockbackDirection = Direction.RIGHT;
+        } else if (attackDirection == Direction.RIGHT) {
+            this.knockbackDirection = Direction.LEFT;
+        } else if (attackDirection == Direction.UP) {
+            this.knockbackDirection = Direction.DOWN;
+        } else if (attackDirection == Direction.DOWN) {
+            this.knockbackDirection = Direction.UP;
+        }
+        this.knockbackDistance = KNOCKBACK_DISTANCE;
+    }
+    
+    /**
+     * Apply damage to the enemy without knockback (used for old takeDamage calls).
      */
     public void takeDamage(int damage) {
         this.health = Math.max(0, this.health - damage);
@@ -105,11 +129,29 @@ public class Enemy {
     /**
      * Update enemy movement with specific player position and room.
      * Returns true if the enemy damaged the player, false otherwise.
-     * Moves smoothly using decimal positions.
+     * Moves smoothly using decimal positions with proper boundary handling.
+     * Enemies move in a direction for a random interval (5-12 tiles), then pick a new random direction.
      */
     public boolean updateWithPlayerPosition(int playerX, int playerY, Room room) {
         boolean damagedPlayer = false;
         
+        // Handle knockback if active
+        if (knockbackDistance > 0 && knockbackDirection != null) {
+            double newX = x + (knockbackDirection.dx * MOVEMENT_SPEED);
+            double newY = y + (knockbackDirection.dy * MOVEMENT_SPEED);
+
+            double maxX = (room != null) ? Room.ROOM_WIDTH : MAX_X;
+            double maxY = (room != null) ? Room.ROOM_HEIGHT : MAX_Y;
+
+            newX = Math.max(0, Math.min(newX, maxX - 0.01));
+            newY = Math.max(0, Math.min(newY, maxY - 0.01));
+
+            x = newX;
+            y = newY;
+            knockbackDistance -= MOVEMENT_SPEED;
+            return false;
+        }
+
         // Calculate new position based on current direction (fractional movement)
         double newX = x + (currentDirection.dx * MOVEMENT_SPEED);
         double newY = y + (currentDirection.dy * MOVEMENT_SPEED);
@@ -118,14 +160,40 @@ public class Enemy {
         double maxX = (room != null) ? Room.ROOM_WIDTH : MAX_X;
         double maxY = (room != null) ? Room.ROOM_HEIGHT : MAX_Y;
         
-        // Check bounds and bounce off edges
-        if (newX < 0 || newX >= maxX) {
-            currentDirection = (currentDirection == Direction.LEFT) ? Direction.RIGHT : Direction.LEFT;
-            newX = x + (currentDirection.dx * MOVEMENT_SPEED);
+        // Check bounds and bounce off edges - keep in bounds but allow counter to continue
+        boolean hitBoundary = false;
+        if (newX < 0) {
+            newX = 0;
+            // Only bounce if actually moving left
+            if (currentDirection == Direction.LEFT) {
+                currentDirection = Direction.RIGHT;
+                hitBoundary = true;
+            }
+        } else if (newX >= maxX) {
+            newX = maxX - 0.01;  // Stay just inside the boundary
+            // Only bounce if actually moving right
+            if (currentDirection == Direction.RIGHT) {
+                currentDirection = Direction.LEFT;
+                hitBoundary = true;
+            } else if (newX <= maxX) {
+                newX = maxX + 0.01; // Stay just inside the boundary
+            }
         }
-        if (newY < 0 || newY >= maxY) {
-            currentDirection = (currentDirection == Direction.UP) ? Direction.DOWN : Direction.UP;
-            newY = y + (currentDirection.dy * MOVEMENT_SPEED);
+        
+        if (newY < 0) {
+            newY = 0;
+            // Only bounce if actually moving up
+            if (currentDirection == Direction.UP) {
+                currentDirection = Direction.DOWN;
+                hitBoundary = true;
+            }
+        } else if (newY >= maxY) {
+            newY = maxY - 0.01;  // Stay just inside the boundary
+            // Only bounce if actually moving down
+            if (currentDirection == Direction.DOWN) {
+                currentDirection = Direction.UP;
+                hitBoundary = true;
+            }
         }
         
         // Check if current position is close to player (within 0.5 tiles)
@@ -139,10 +207,12 @@ public class Enemy {
             x = newX;
             y = newY;
             
-            // Increment spaces moved (track progress for direction changes)
-            spacesMovedInDirection += MOVEMENT_SPEED;
+            // Only increment if not hitting a boundary - this way we don't break the counter on bounces
+            if (!hitBoundary) {
+                spacesMovedInDirection += MOVEMENT_SPEED;
+            }
             
-            // Check if it's time to switch direction (crossed a tile boundary)
+            // Check if it's time to switch to a random direction (after moving the specified number of tiles)
             if (spacesMovedInDirection >= spacesUntilSwitch) {
                 chooseNewDirection();
             }

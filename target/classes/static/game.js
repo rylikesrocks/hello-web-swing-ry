@@ -16,6 +16,12 @@ let canvas = null;
 let ctx = null;
 let lastFrameTime = 0;
 
+// Damage indicator state
+let lastDamageTime = 0;
+let previousInvulnerabilityTime = 0;  // Track previous invulnerability time to detect damage
+let damageFlashDuration = 300;  // Flash for 300ms
+let invulnerabilityFlashDuration = 3000;  // Show invulnerability for 3 seconds
+
 // Enemy position interpolation
 let previousEnemies = [];
 let lastEnemyFetchTime = 0;
@@ -50,6 +56,8 @@ function initializeGame() {
         gameState = state;
         enemies = enemyList;
         doors = doorList;
+        lastDamageTime = Date.now();
+        previousInvulnerabilityTime = 0;
         updateUI();
     })
     .catch(error => console.error('Error initializing game:', error));
@@ -67,6 +75,7 @@ function setupEventListeners() {
             .then(response => response.json())
             .then(data => {
                 gameState = data;
+                lastDamageTime = Date.now();
                 updateUI();
             })
             .catch(error => console.error('Error:', error));
@@ -87,6 +96,8 @@ function setupEventListeners() {
             .then(response => response.json())
             .then(data => {
                 gameState = data;
+                lastDamageTime = Date.now();
+                previousInvulnerabilityTime = 0;
                 updateUI();
             })
             .catch(error => console.error('Error:', error));
@@ -186,16 +197,6 @@ function movePlayer(direction) {
         .then(data => {
             gameState = data;
             updateUI();
-            // Also fetch enemies and doors to get their updated positions
-            Promise.all([
-                fetch(`${GAME_API_URL}/enemies`).then(r => r.json()),
-                fetch(`${GAME_API_URL}/doors`).then(r => r.json())
-            ])
-            .then(([enemyList, doorList]) => {
-                enemies = enemyList;
-                doors = doorList;
-            })
-            .catch(error => console.error('Error fetching enemies/doors:', error));
         })
         .catch(error => console.error('Error:', error));
 }
@@ -221,6 +222,16 @@ function fetchGameState() {
  */
 function updateUI() {
     if (!gameState) return;
+    
+    // Check if player just took damage by detecting invulnerability time increasing
+    const currentTime = Date.now();
+    const currentInvulnTime = gameState.invulnerabilityTimeRemaining || 0;
+    
+    if (currentInvulnTime > previousInvulnerabilityTime && previousInvulnerabilityTime === 0) {
+        // Invulnerability just started (player took damage)
+        lastDamageTime = currentTime;
+    }
+    previousInvulnerabilityTime = currentInvulnTime;
     
     // Update health bar
     const healthPercent = (gameState.playerHealth / gameState.playerMaxHealth) * 100;
@@ -372,18 +383,45 @@ function drawDoors() {
 }
 
 /**
- * Draw the player character
+ * Draw the player character with damage/invulnerability effects
  */
 function drawPlayer() {
     const playerScreenX = gameState.playerX * TILE_SIZE;
     const playerScreenY = gameState.playerY * TILE_SIZE;
+    const currentTime = Date.now();
+    const invulnTime = gameState.invulnerabilityTimeRemaining || 0;
     
-    // Draw player as a green square
-    ctx.fillStyle = '#4CAF50';
+    // Determine player color based on damage/invulnerability state
+    let playerColor = '#4CAF50';  // Default green
+    let borderColor = '#8BC34A';
+    
+    if (invulnTime > 0) {
+        // Flash between red and green based on time since damage
+        const timeSinceDamage = currentTime - lastDamageTime;
+        
+        // Flash red for first 300ms
+        if (timeSinceDamage < damageFlashDuration) {
+            playerColor = '#FF5252';  // Bright red
+            borderColor = '#FF1744';
+        } else {
+            // Then flash green for the remaining invulnerability time
+            const flashCycle = (timeSinceDamage - damageFlashDuration) % 200;  // 200ms flash cycle
+            if (flashCycle < 100) {
+                playerColor = '#4CAF50';  // Green
+                borderColor = '#8BC34A';
+            } else {
+                playerColor = '#81C784';  // Lighter green
+                borderColor = '#66BB6A';
+            }
+        }
+    }
+    
+    // Draw player as a colored square
+    ctx.fillStyle = playerColor;
     ctx.fillRect(playerScreenX, playerScreenY, TILE_SIZE, TILE_SIZE);
     
     // Draw player border
-    ctx.strokeStyle = '#8BC34A';
+    ctx.strokeStyle = borderColor;
     ctx.lineWidth = 2;
     ctx.strokeRect(playerScreenX, playerScreenY, TILE_SIZE, TILE_SIZE);
 }
@@ -392,6 +430,9 @@ function drawPlayer() {
  * Draw all enemies with smooth interpolation between server updates
  */
 function drawEnemies() {
+    const currentTime = Date.now();
+    const invulnTime = gameState.invulnerabilityTimeRemaining || 0;
+    
     for (let i = 0; i < enemies.length; i++) {
         let enemy = enemies[i];
         let enemyScreenX = enemy.x * TILE_SIZE;
@@ -408,11 +449,30 @@ function drawEnemies() {
         }
         
         // Draw enemy as a red square
-        ctx.fillStyle = '#F44336';
+        let enemyColor = '#F44336';  // Default red
+        let enemyBorder = '#FF9800';
+        
+        // Flash the square with invulnerability indicator
+        if (invulnTime > 0) {
+            const timeSinceDamage = currentTime - lastDamageTime;
+            // Flash background color for the first 500ms to show invulnerability frames activated
+            if (timeSinceDamage < 500) {
+                const flashCycle = timeSinceDamage % 100;  // 100ms flash cycle
+                if (flashCycle < 50) {
+                    enemyColor = '#FFD700';  // Gold
+                    enemyBorder = '#FFC107';
+                } else {
+                    enemyColor = '#F44336';  // Red
+                    enemyBorder = '#FF9800';
+                }
+            }
+        }
+        
+        ctx.fillStyle = enemyColor;
         ctx.fillRect(enemyScreenX, enemyScreenY, TILE_SIZE, TILE_SIZE);
         
-        // Draw enemy border (orange)
-        ctx.strokeStyle = '#FF9800';
+        // Draw enemy border
+        ctx.strokeStyle = enemyBorder;
         ctx.lineWidth = 2;
         ctx.strokeRect(enemyScreenX, enemyScreenY, TILE_SIZE, TILE_SIZE);
     }

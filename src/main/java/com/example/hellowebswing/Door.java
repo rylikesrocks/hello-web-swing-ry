@@ -15,6 +15,7 @@ public class Door {
     private int x2, y2;  // Second tile of door (for 2-tile doors)
     private Side side;   // Which side of the room this door is on
     private boolean active; // Whether the door is currently accessible
+    private boolean visible; // Whether the door is visible on the map
     
     /**
      * Create a door at the specified location and side.
@@ -28,6 +29,7 @@ public class Door {
         this.y2 = y2;
         this.side = side;
         this.active = true;  // Doors are active by default
+        this.visible = true; // Visible by default
     }
     
     /**
@@ -84,5 +86,13 @@ public class Door {
     
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public boolean isVisible() {
+        return visible;
+    }
+
+    public void setVisible(boolean visible) {
+        this.visible = visible;
     }
 }

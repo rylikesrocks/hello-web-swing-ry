@@ -22,6 +22,16 @@ public class GameModel {
     private int playerRoomX;
     private int playerRoomY;
     
+    // Invulnerability system (3 seconds = 3000 ms)
+    private long invulnerabilityEndTime = 0;
+    private static final long INVULNERABILITY_DURATION = 3000;  // 3 seconds in milliseconds
+    
+    // Jackson requires public getters for serialization - these are read by the frontend
+    @com.fasterxml.jackson.annotation.JsonProperty("invulnerabilityTimeRemaining")
+    public long getInvulnerabilityTimeRemainingForSerialization() {
+        return getRemainingInvulnerabilityTime();
+    }
+    
     private Room currentRoom;
     private Map<String, Room> rooms;
     
@@ -36,6 +46,7 @@ public class GameModel {
         
         // Initialize rooms
         this.rooms = new HashMap<>();
+        this.invulnerabilityEndTime = 0;  // Initialize invulnerability
         initializeRooms();
         
         // Start in the center of the dungeon (0, 0)
@@ -101,9 +112,18 @@ public class GameModel {
     
     /**
      * Apply damage to the player (game logic).
+     * Checks invulnerability status before applying damage.
      */
-    public void takeDamage(int damage) {
-        this.playerHealth = Math.max(0, Math.min(playerHealth - damage, playerMaxHealth));
+    public boolean takeDamage(int damage) {
+        // Check if player is currently invulnerable
+        if (isInvulnerable()) {
+            return false;  // Damage blocked by invulnerability
+        }
+        
+        this.playerHealth = Math.max(0, playerHealth - damage);
+        // Set invulnerability for 3 seconds after taking damage
+        this.invulnerabilityEndTime = System.currentTimeMillis() + INVULNERABILITY_DURATION;
+        return true;  // Damage was applied
     }
     
     /**
@@ -242,9 +262,27 @@ public class GameModel {
     
     /**
      * Damage the player from an enemy attack.
+     * Respects invulnerability frames.
      */
     public void damagePlayer(int damage) {
-        this.playerHealth = Math.max(0, playerHealth - damage);
+        takeDamage(damage);
+    }
+
+    
+    
+    /**
+     * Check if player is currently invulnerable.
+     */
+    public boolean isInvulnerable() {
+        return System.currentTimeMillis() < invulnerabilityEndTime;
+    }
+    
+    /**
+     * Get remaining invulnerability time in milliseconds.
+     */
+    public long getRemainingInvulnerabilityTime() {
+        long remaining = invulnerabilityEndTime - System.currentTimeMillis();
+        return Math.max(0, remaining);
     }
     
     /**
@@ -256,6 +294,53 @@ public class GameModel {
                 damagePlayer(enemy.getDamage());
             }
         }
+        // Update door states based on enemy status
+        currentRoom.updateDoorStates();
+    }
+
+    /**
+     * Player performs a sword attack in the given direction.
+     * Checks for enemies and damages them with knockback.
+     */
+    public void attackInDirection(String direction) {
+        int attackX = playerX;
+        int attackY = playerY;
+        Enemy.Direction attackDir = null;
+
+        switch (direction.toLowerCase()) {
+            case "up":
+                attackY--;
+                attackDir = Enemy.Direction.UP;
+                break;
+            case "down":
+                attackY++;
+                attackDir = Enemy.Direction.DOWN;
+                break;
+            case "left":
+                attackX--;
+                attackDir = Enemy.Direction.LEFT;
+                break;
+            case "right":
+                attackX++;
+                attackDir = Enemy.Direction.RIGHT;
+                break;
+            default:
+                return;
+        }
+
+        if (attackX < 0 || attackX >= Room.ROOM_WIDTH || attackY < 0 || attackY >= Room.ROOM_HEIGHT) {
+            return;
+        }
+
+        for (Enemy enemy : currentRoom.getEnemies()) {
+            if (enemy.getHealth() > 0 && enemy.getX() == attackX && enemy.getY() == attackY) {
+                enemy.takeDamage(15, attackDir);
+                break;
+            }
+        }
+
+        // After attack, update door states in case enemies died
+        currentRoom.updateDoorStates();
     }
     
     /**
@@ -263,5 +348,12 @@ public class GameModel {
      */
     public Room getCurrentRoom() {
         return currentRoom;
+    }
+    
+    /**
+     * Reset invulnerability (used when resetting the game).
+     */
+    public void resetInvulnerability() {
+        this.invulnerabilityEndTime = 0;
     }
 }
