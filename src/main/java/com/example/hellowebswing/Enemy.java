@@ -131,11 +131,12 @@ public class Enemy {
      * Returns true if the enemy damaged the player, false otherwise.
      * Moves smoothly using decimal positions with proper boundary handling.
      * Enemies move in a direction for a random interval (5-12 tiles), then pick a new random direction.
+     * During knockback, enemies slide away from the attacker and are immune to damage.
      */
     public boolean updateWithPlayerPosition(int playerX, int playerY, Room room) {
         boolean damagedPlayer = false;
         
-        // Handle knockback if active
+        // Handle knockback if active - enemy slides away from attacker
         if (knockbackDistance > 0 && knockbackDirection != null) {
             double newX = x + (knockbackDirection.dx * MOVEMENT_SPEED);
             double newY = y + (knockbackDirection.dy * MOVEMENT_SPEED);
@@ -143,16 +144,24 @@ public class Enemy {
             double maxX = (room != null) ? Room.ROOM_WIDTH : MAX_X;
             double maxY = (room != null) ? Room.ROOM_HEIGHT : MAX_Y;
 
+            // Clamp to boundaries - knockback stops at walls
             newX = Math.max(0, Math.min(newX, maxX - 0.01));
             newY = Math.max(0, Math.min(newY, maxY - 0.01));
 
             x = newX;
             y = newY;
             knockbackDistance -= MOVEMENT_SPEED;
-            return false;
+            
+            // Knockback complete - resume normal movement
+            if (knockbackDistance <= 0) {
+                knockbackDistance = 0;
+                knockbackDirection = null;
+            }
+            
+            return false;  // Don't damage player during knockback
         }
 
-        // Calculate new position based on current direction (fractional movement)
+        // Normal movement: Calculate new position based on current direction (fractional movement)
         double newX = x + (currentDirection.dx * MOVEMENT_SPEED);
         double newY = y + (currentDirection.dy * MOVEMENT_SPEED);
         
@@ -175,8 +184,6 @@ public class Enemy {
             if (currentDirection == Direction.RIGHT) {
                 currentDirection = Direction.LEFT;
                 hitBoundary = true;
-            } else if (newX <= maxX) {
-                newX = maxX + 0.01; // Stay just inside the boundary
             }
         }
         

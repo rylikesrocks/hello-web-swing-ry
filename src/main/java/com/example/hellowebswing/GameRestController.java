@@ -81,4 +81,14 @@ public class GameRestController {
         gameService.resetGame();
         return gameService.getGameState();
     }
+    
+    /**
+     * Handle sword attack in a given direction.
+     * Damages enemies in the attack direction and applies knockback.
+     */
+    @PostMapping("/attack")
+    public GameModel attackWithSword(@RequestParam String direction) {
+        gameService.getGameState().attackInDirection(direction);
+        return gameService.getGameState();
+    }
 }

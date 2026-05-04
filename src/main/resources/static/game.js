@@ -32,6 +32,13 @@ let pressedKeys = new Set();
 let inputTickCounter = 0;
 let enemyTickCounter = 0;
 
+// Sword mechanics
+let lastDirection = 'right';  // Default sword direction
+let swordSwingActive = false;  // Whether sword is currently swinging
+let swordSwingStartTime = 0;  // When the swing started
+const SWORD_SWING_DURATION = 300;  // Swing animation duration in ms
+const SWORD_DAMAGE = 15;  // Damage dealt by sword (matches backend)
+
 // Initialize the game when the page loads
 window.addEventListener('DOMContentLoaded', () => {
     initializeGame();
@@ -139,12 +146,18 @@ function handleKeyDown(event) {
             direction = 'right';
             event.preventDefault();
             break;
+        case ' ':
+            // Space bar triggers sword attack
+            attackWithSword();
+            event.preventDefault();
+            return;
         default:
             return;
     }
     
     if (direction) {
         pressedKeys.add(direction);
+        lastDirection = direction;  // Track the last direction pressed
     }
 }
 
@@ -199,6 +212,27 @@ function movePlayer(direction) {
             updateUI();
         })
         .catch(error => console.error('Error:', error));
+}
+
+/**
+ * Send a sword attack request to the server in the last pressed direction
+ */
+function attackWithSword() {
+    // Only allow one swing at a time
+    if (swordSwingActive) {
+        return;
+    }
+    
+    swordSwingActive = true;
+    swordSwingStartTime = Date.now();
+    
+    fetch(`${GAME_API_URL}/attack?direction=${lastDirection}`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            gameState = data;
+            updateUI();
+        })
+        .catch(error => console.error('Error attacking:', error));
 }
 
 /**
@@ -314,6 +348,14 @@ function gameLoop(currentTime) {
 function render() {
     if (!gameState || !ctx) return;
     
+    // Check if sword swing animation is complete
+    if (swordSwingActive) {
+        const elapsedTime = Date.now() - swordSwingStartTime;
+        if (elapsedTime > SWORD_SWING_DURATION) {
+            swordSwingActive = false;
+        }
+    }
+    
     // Clear the canvas
     ctx.fillStyle = '#1a1a1a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -329,6 +371,9 @@ function render() {
     
     // Draw player
     drawPlayer();
+    
+    // Draw sword
+    drawSword();
     
     // Draw grid (optional, for visualization)
     drawGrid();
@@ -476,6 +521,90 @@ function drawEnemies() {
         ctx.lineWidth = 2;
         ctx.strokeRect(enemyScreenX, enemyScreenY, TILE_SIZE, TILE_SIZE);
     }
+}
+
+/**
+ * Draw the sword sprite next to the player
+ * The sword swings in the direction the player last pressed
+ * During a swing, it extends away from the player
+ */
+function drawSword() {
+    if (!gameState) return;
+    
+    const playerScreenX = gameState.playerX * TILE_SIZE;
+    const playerScreenY = gameState.playerY * TILE_SIZE;
+    const swordSize = TILE_SIZE * 0.8;
+    const swordCenter = TILE_SIZE / 2;
+    
+    // Calculate sword animation progress (0 to 1)
+    let swingProgress = 0;
+    if (swordSwingActive) {
+        const elapsedTime = Date.now() - swordSwingStartTime;
+        swingProgress = Math.min(1, elapsedTime / SWORD_SWING_DURATION);
+    }
+    
+    // Calculate sword angle and distance based on direction and swing state
+    let angle = 0;
+    let distance = TILE_SIZE * 0.5;  // Default offset from player
+    let baseAngle = 0;
+    
+    // Set base angle based on direction
+    switch(lastDirection) {
+        case 'right':
+            baseAngle = 0;
+            break;
+        case 'left':
+            baseAngle = Math.PI;
+            break;
+        case 'up':
+            baseAngle = -Math.PI / 2;
+            break;
+        case 'down':
+            baseAngle = Math.PI / 2;
+            break;
+    }
+    
+    // During swing, the sword rotates outward and back
+    // Create an arc motion: start at -45 degrees, swing to +45 degrees, then back
+    const swingArc = Math.PI / 4;  // 45 degrees in radians
+    if (swingProgress < 0.5) {
+        // First half: swing out
+        angle = baseAngle - swingArc + (swingProgress * 2) * (swingArc * 2);
+        distance = TILE_SIZE * 0.5 + (swingProgress * 2) * 0.2 * TILE_SIZE;
+    } else {
+        // Second half: swing back
+        angle = baseAngle + swingArc - ((swingProgress - 0.5) * 2) * (swingArc * 2);
+        distance = TILE_SIZE * 0.7 - ((swingProgress - 0.5) * 2) * 0.2 * TILE_SIZE;
+    }
+    
+    if (!swordSwingActive) {
+        // Not swinging - just show sword to the side at ready position
+        angle = baseAngle;
+        distance = TILE_SIZE * 0.5;
+    }
+    
+    // Calculate sword position
+    const swordX = playerScreenX + swordCenter + Math.cos(angle) * distance;
+    const swordY = playerScreenY + swordCenter + Math.sin(angle) * distance;
+    
+    // Save canvas state for rotation
+    ctx.save();
+    ctx.translate(swordX, swordY);
+    ctx.rotate(angle);
+    
+    // Draw sword blade (yellow/gold color)
+    ctx.fillStyle = '#FFD700';
+    ctx.shadowColor = 'rgba(255, 215, 0, 0.5)';
+    ctx.shadowBlur = 10;
+    ctx.fillRect(-TILE_SIZE * 0.15, -swordSize * 0.5, TILE_SIZE * 0.3, swordSize);
+    
+    // Draw sword border
+    ctx.strokeStyle = '#FFA500';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-TILE_SIZE * 0.15, -swordSize * 0.5, TILE_SIZE * 0.3, swordSize);
+    
+    // Restore canvas state
+    ctx.restore();
 }
 
 /**

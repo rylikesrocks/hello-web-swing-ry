@@ -23,6 +23,10 @@ public class Room {
     private List<Enemy> enemies;
     private List<Door> doors;
     
+    // Entry and exit doors for linear progression
+    private Door.Side entryDoor;  // Door player came from (always active if it exists)
+    private Door.Side exitDoor;   // Door player can use to progress (active only when enemies defeated)
+    
     /**
      * Create a room at the specified dungeon position.
      */
@@ -33,41 +37,97 @@ public class Room {
         this.enemies = new ArrayList<>();
         this.doors = new ArrayList<>();
         
-        // Create doors on all four sides
+        // Determine entry and exit doors based on room position
+        determineEntryAndExitDoors();
+        
+        // Create only entry and exit doors
         initializeDoors();
     }
     
     /**
-     * Initialize doors in the center of each side.
-     * Top/Bottom doors: 2x1 (tiles 9-10 on their respective rows)
-     * Left/Right doors: 1x2 (tiles on their columns, rows 7-8)
-     * Disables doors based on dungeon boundaries (3x3 grid, range -1 to 1).
+     * Determine entry and exit doors based on room position.
+     * Creates a linear progression through the dungeon.
      */
-    private void initializeDoors() {
-        // Top door (center top, 2 tiles wide) - disabled if at topmost room (roomY == -1)
-        Door topDoor = new Door(9, 0, 10, 0, Door.Side.TOP);
-        if (roomY > -1) {
-            doors.add(topDoor);
-        }
+    private void determineEntryAndExitDoors() {
+        // Room layout: (x, y) coordinates where x: -1=left, 0=middle, 1=right; y: -1=top, 0=middle, 1=bottom
+        // Linear path: Spawn -> Top -> Top-Left -> Mid-Left -> Bot-Left -> Bot-Mid -> Bot-Right -> Mid-Right -> Top-Right(Boss)
         
-        // Bottom door (center bottom, 2 tiles wide) - disabled if at bottommost room (roomY == 1)
-        Door bottomDoor = new Door(9, 14, 10, 14, Door.Side.BOTTOM);
-        if (roomY < 1) {
-            doors.add(bottomDoor);
-        }
-        
-        // Left door (center left, 2 tiles tall) - disabled if at leftmost room (roomX == -1)
-        Door leftDoor = new Door(0, 7, 0, 8, Door.Side.LEFT);
-        if (roomX > -1) {
-            doors.add(leftDoor);
-        }
-        
-        // Right door (center right, 2 tiles tall) - disabled if at rightmost room (roomX == 1)
-        Door rightDoor = new Door(19, 7, 19, 8, Door.Side.RIGHT);
-        if (roomX < 1) {
-            doors.add(rightDoor);
+        if (roomX == 0 && roomY == 0) {
+            // Spawn room: entry=null, exit=TOP
+            entryDoor = null;
+            exitDoor = Door.Side.TOP;
+        } else if (roomX == 0 && roomY == -1) {
+            // Top-Middle: entry=BOTTOM, exit=LEFT
+            entryDoor = Door.Side.BOTTOM;
+            exitDoor = Door.Side.LEFT;
+        } else if (roomX == -1 && roomY == -1) {
+            // Top-Left: entry=RIGHT, exit=BOTTOM
+            entryDoor = Door.Side.RIGHT;
+            exitDoor = Door.Side.BOTTOM;
+        } else if (roomX == -1 && roomY == 0) {
+            // Middle-Left: entry=TOP, exit=BOTTOM
+            entryDoor = Door.Side.TOP;
+            exitDoor = Door.Side.BOTTOM;
+        } else if (roomX == -1 && roomY == 1) {
+            // Bottom-Left: entry=TOP, exit=RIGHT
+            entryDoor = Door.Side.TOP;
+            exitDoor = Door.Side.RIGHT;
+        } else if (roomX == 0 && roomY == 1) {
+            // Bottom-Middle: entry=LEFT, exit=RIGHT
+            entryDoor = Door.Side.LEFT;
+            exitDoor = Door.Side.RIGHT;
+        } else if (roomX == 1 && roomY == 1) {
+            // Bottom-Right: entry=LEFT, exit=TOP
+            entryDoor = Door.Side.LEFT;
+            exitDoor = Door.Side.TOP;
+        } else if (roomX == 1 && roomY == 0) {
+            // Middle-Right: entry=BOTTOM, exit=TOP
+            entryDoor = Door.Side.BOTTOM;
+            exitDoor = Door.Side.TOP;
+        } else if (roomX == 1 && roomY == -1) {
+            // Top-Right (Boss): entry=BOTTOM, exit=null (win condition)
+            entryDoor = Door.Side.BOTTOM;
+            exitDoor = null;
         }
     }
+    
+    /**
+     * Initialize doors - create only entry and exit doors for linear progression.
+     * Top/Bottom doors: 2x1 (tiles 9-10 on their respective rows)
+     * Left/Right doors: 1x2 (tiles on their columns, rows 7-8)
+     */
+    private void initializeDoors() {
+        // Add entry door if it exists (always visible/active)
+        if (entryDoor != null) {
+            addDoorBySide(entryDoor);
+        }
+        
+        // Add exit door if it exists (visibility/activation based on enemy status)
+        if (exitDoor != null) {
+            addDoorBySide(exitDoor);
+        }
+    }
+    
+    /**
+     * Helper method to create a door on the specified side.
+     */
+    private void addDoorBySide(Door.Side side) {
+        switch (side) {
+            case TOP:
+                doors.add(new Door(9, 0, 10, 0, Door.Side.TOP));
+                break;
+            case BOTTOM:
+                doors.add(new Door(9, 14, 10, 14, Door.Side.BOTTOM));
+                break;
+            case LEFT:
+                doors.add(new Door(0, 7, 0, 8, Door.Side.LEFT));
+                break;
+            case RIGHT:
+                doors.add(new Door(19, 7, 19, 8, Door.Side.RIGHT));
+                break;
+        }
+    }
+    
     
     /**
      * Check if a position is on a door and return that door.
@@ -128,11 +188,23 @@ public class Room {
 
     /**
      * Update door active state and visibility based on whether enemies are defeated.
+     * Entry door is always active/visible.
+     * Exit door is only active/visible when all enemies are defeated.
      */
     public void updateDoorStates() {
         boolean enemiesDefeated = areAllEnemiesDefeated();
+        
         for (Door door : doors) {
-            door.setActive(enemiesDefeated);
+            // Entry door is always active and visible
+            if (entryDoor != null && door.getSide() == entryDoor) {
+                door.setActive(true);
+                door.setVisible(true);
+            }
+            // Exit door is only active/visible when enemies defeated
+            else if (exitDoor != null && door.getSide() == exitDoor) {
+                door.setActive(enemiesDefeated);
+                door.setVisible(enemiesDefeated);
+            }
         }
     }
     

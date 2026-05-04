@@ -59,6 +59,7 @@ public class GameModel {
      * Initialize all 9 dungeon rooms in a 3x3 grid.
      * Grid coordinates: X and Y range from -1 to 1.
      * Center room is at (0, 0).
+     * Linear path: Spawn -> Top -> Top-Left -> Mid-Left -> Bot-Left -> Bot-Mid -> Bot-Right -> Mid-Right -> Top-Right(Boss)
      */
     private void initializeRooms() {
         // Create a 3x3 grid of rooms
@@ -68,11 +69,40 @@ public class GameModel {
                 Room room = new Room(key, x, y);
                 rooms.put(key, room);
                 
-                // Add enemies only to certain rooms for variety
+                // Add enemies based on room position
                 if (x == 0 && y == 0) {
-                    // Center room with some enemies
-                    room.addEnemy(new Enemy(15, 7, 30, 10));
-                    room.addEnemy(new Enemy(10, 12, 30, 10));
+                    // Spawn room (0, 0) - starting area with enemies
+                    room.addEnemy(new Enemy(15, 7, 20, 10));
+                    room.addEnemy(new Enemy(10, 12, 20, 10));
+                } else if (x == 0 && y == -1) {
+                    // Top-Middle (0, -1)
+                    room.addEnemy(new Enemy(12, 8, 20, 10));
+                    room.addEnemy(new Enemy(8, 7, 20, 10));
+                } else if (x == -1 && y == -1) {
+                    // Top-Left (-1, -1)
+                    room.addEnemy(new Enemy(10, 10, 20, 10));
+                } else if (x == -1 && y == 0) {
+                    // Middle-Left (-1, 0)
+                    room.addEnemy(new Enemy(14, 8, 20, 10));
+                    room.addEnemy(new Enemy(6, 7, 20, 10));
+                } else if (x == -1 && y == 1) {
+                    // Bottom-Left (-1, 1)
+                    room.addEnemy(new Enemy(10, 9, 20, 10));
+                } else if (x == 0 && y == 1) {
+                    // Bottom-Middle (0, 1)
+                    room.addEnemy(new Enemy(12, 7, 20, 10));
+                } else if (x == 1 && y == 1) {
+                    // Bottom-Right (1, 1)
+                    room.addEnemy(new Enemy(10, 8, 20, 10));
+                } else if (x == 1 && y == 0) {
+                    // Middle-Right (1, 0)
+                    room.addEnemy(new Enemy(15, 10, 20, 10));
+                    room.addEnemy(new Enemy(5, 6, 20, 10));
+                } else if (x == 1 && y == -1) {
+                    // Top-Right (1, -1) - Boss room
+                    room.addEnemy(new Enemy(10, 7, 20, 10));
+                    room.addEnemy(new Enemy(10, 4, 20, 10));
+                    room.addEnemy(new Enemy(10, 10, 20, 10));
                 }
             }
         }
@@ -172,6 +202,7 @@ public class GameModel {
     
     /**
      * Transition to an adjacent room through a door.
+     * Rooms have predefined entry/exit doors, so door states are already correct.
      */
     private void transitionRoom(Door door) {
         // Calculate the next room position based on the door side
@@ -196,13 +227,6 @@ public class GameModel {
         // Check if the next room exists
         String nextRoomKey = getRoomKey(nextRoomX, nextRoomY);
         if (rooms.containsKey(nextRoomKey)) {
-            // Disable the door we just used in the current room
-            currentRoom.disableDoor(door.getSide());
-            
-            // Enable the opposite door in the current room (so player can come back)
-            // Actually no - we already created the room with the opposite door disabled
-            // We need to enable the door the player is leaving FROM in the current room
-            
             // Move to the next room
             currentRoom = rooms.get(nextRoomKey);
             playerRoomX = nextRoomX;
@@ -211,9 +235,6 @@ public class GameModel {
             // Teleport player to opposite side of new room
             Door.Side oppositeSide = door.getOppositeSide();
             teleportToOppositeSide(oppositeSide);
-            
-            // Enable the door we came through in the new room (so player can go back)
-            currentRoom.enableDoor(oppositeSide);
         }
     }
     
@@ -287,8 +308,13 @@ public class GameModel {
     
     /**
      * Update all enemies in the game.
+     * Removes dead enemies and updates door states.
      */
     public void updateEnemies() {
+        // Remove dead enemies from the room
+        currentRoom.getEnemies().removeIf(enemy -> enemy.getHealth() <= 0);
+        
+        // Update living enemies
         for (Enemy enemy : currentRoom.getEnemies()) {
             if (enemy.updateWithPlayerPosition(getPlayerX(), getPlayerY(), currentRoom)) {
                 damagePlayer(enemy.getDamage());
@@ -334,7 +360,7 @@ public class GameModel {
 
         for (Enemy enemy : currentRoom.getEnemies()) {
             if (enemy.getHealth() > 0 && enemy.getX() == attackX && enemy.getY() == attackY) {
-                enemy.takeDamage(15, attackDir);
+                enemy.takeDamage(10, attackDir);
                 break;
             }
         }
