@@ -24,9 +24,19 @@
         
         <div class="controls">
             <p>Use Arrow Keys or WASD to move</p>
-            <button id="damageBtn">Take Damage (10)</button>
-            <button id="healBtn">Heal (20)</button>
-            <button id="resetBtn">Reset Game</button>
+            <p>Press Space to attack</p>
+        </div>
+        
+        <div class="button-container">
+            <button id="resetBtn" class="reset-button">Reset Game</button>
+        </div>
+        
+        <!-- Death screen overlay (hidden by default) -->
+        <div id="deathScreen" class="death-screen hidden">
+            <div class="death-content">
+                <h2>YOU DIED</h2>
+                <button id="resetFromDeathBtn" class="reset-button">Reset Game</button>
+            </div>
         </div>
     </div>
 

@@ -15,6 +15,7 @@ let doors = [];
 let canvas = null;
 let ctx = null;
 let lastFrameTime = 0;
+let isPlayerDead = false;  // Track if player is currently dead
 
 // Damage indicator state
 let lastDamageTime = 0;
@@ -38,6 +39,13 @@ let swordSwingActive = false;  // Whether sword is currently swinging
 let swordSwingStartTime = 0;  // When the swing started
 const SWORD_SWING_DURATION = 300;  // Swing animation duration in ms
 const SWORD_DAMAGE = 15;  // Damage dealt by sword (matches backend)
+let lastAttackTime = 0;  // Track when the last attack was sent to prevent spam
+const ATTACK_THROTTLE = 150;  // Minimum milliseconds between attack requests (must be < SWORD_SWING_DURATION)
+
+// Request throttling
+let pendingEnemyFetch = null;  // Track pending enemy/door fetch to avoid duplicate requests
+let pendingMoveFetch = null;    // Track pending move request
+let lastSuccessfulFetchTime = 0;
 
 // Initialize the game when the page loads
 window.addEventListener('DOMContentLoaded', () => {
@@ -77,37 +85,14 @@ function initializeGame() {
  * Set up button and keyboard event listeners
  */
 function setupEventListeners() {
-    document.getElementById('damageBtn').addEventListener('click', () => {
-        fetch(`${GAME_API_URL}/damage?amount=10`, { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                gameState = data;
-                lastDamageTime = Date.now();
-                updateUI();
-            })
-            .catch(error => console.error('Error:', error));
-    });
-    
-    document.getElementById('healBtn').addEventListener('click', () => {
-        fetch(`${GAME_API_URL}/heal?amount=20`, { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                gameState = data;
-                updateUI();
-            })
-            .catch(error => console.error('Error:', error));
-    });
-    
+    // Reset button (from controls area)
     document.getElementById('resetBtn').addEventListener('click', () => {
-        fetch(`${GAME_API_URL}/reset`, { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                gameState = data;
-                lastDamageTime = Date.now();
-                previousInvulnerabilityTime = 0;
-                updateUI();
-            })
-            .catch(error => console.error('Error:', error));
+        resetGameState();
+    });
+    
+    // Reset button from death screen
+    document.getElementById('resetFromDeathBtn').addEventListener('click', () => {
+        resetGameState();
     });
     
     // Keyboard movement - buffer key presses instead of sending requests immediately
@@ -116,9 +101,47 @@ function setupEventListeners() {
 }
 
 /**
+ * Reset the game state and hide death screen
+ */
+function resetGameState() {
+    fetch(`${GAME_API_URL}/reset`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            gameState = data;
+            lastDamageTime = Date.now();
+            previousInvulnerabilityTime = 0;
+            isPlayerDead = false;
+            hideDeathScreen();
+            updateUI();
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+/**
+ * Show the death screen overlay
+ */
+function showDeathScreen() {
+    const deathScreen = document.getElementById('deathScreen');
+    deathScreen.classList.remove('hidden');
+}
+
+/**
+ * Hide the death screen overlay
+ */
+function hideDeathScreen() {
+    const deathScreen = document.getElementById('deathScreen');
+    deathScreen.classList.add('hidden');
+}
+
+/**
  * Handle keyboard key down - buffer the key press
+ * Disabled when player is dead
  */
 function handleKeyDown(event) {
+    if (isPlayerDead) {
+        return;  // Don't allow input when dead
+    }
+    
     let direction = null;
     
     switch(event.key) {
@@ -202,29 +225,60 @@ function handleKeyUp(event) {
 }
 
 /**
- * Send a move request to the server and fetch updated game state, enemies, and doors
+ * Send a move request to the server and fetch updated game state.
+ * Uses deduplication to avoid duplicate in-flight requests.
+ * Disabled when player is dead.
  */
 function movePlayer(direction) {
-    fetch(`${GAME_API_URL}/move?direction=${direction}`, { method: 'POST' })
+    // Don't allow movement when dead
+    if (isPlayerDead) {
+        return;
+    }
+    
+    // If a move request is already pending, don't send another
+    if (pendingMoveFetch) {
+        return;
+    }
+    
+    pendingMoveFetch = fetch(`${GAME_API_URL}/move?direction=${direction}`, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
             gameState = data;
             updateUI();
+            pendingMoveFetch = null;
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => {
+            console.error('Error:', error);
+            pendingMoveFetch = null;
+        });
 }
 
 /**
- * Send a sword attack request to the server in the last pressed direction
+ * Send a sword attack request to the server in the last pressed direction.
+ * Throttled to prevent spam - maximum one attack every ATTACK_THROTTLE milliseconds.
+ * Disabled when player is dead.
  */
 function attackWithSword() {
-    // Only allow one swing at a time
+    // Don't allow attacks when dead
+    if (isPlayerDead) {
+        return;
+    }
+    
+    const currentTime = Date.now();
+    
+    // Throttle attacks to prevent spamming
+    if (currentTime - lastAttackTime < ATTACK_THROTTLE) {
+        return;
+    }
+    
+    // Only allow one swing animation at a time
     if (swordSwingActive) {
         return;
     }
     
     swordSwingActive = true;
-    swordSwingStartTime = Date.now();
+    swordSwingStartTime = currentTime;
+    lastAttackTime = currentTime;
     
     fetch(`${GAME_API_URL}/attack?direction=${lastDirection}`, { method: 'POST' })
         .then(response => response.json())
@@ -256,6 +310,12 @@ function fetchGameState() {
  */
 function updateUI() {
     if (!gameState) return;
+    
+    // Check if player has died
+    if (gameState.playerHealth <= 0 && !isPlayerDead) {
+        isPlayerDead = true;
+        showDeathScreen();
+    }
     
     // Check if player just took damage by detecting invulnerability time increasing
     const currentTime = Date.now();
@@ -309,25 +369,36 @@ function gameLoop(currentTime) {
     }
     
     // Fetch enemies and doors periodically to show their movement and room state
+    // Uses deduplication to avoid sending multiple requests if one is still pending
     enemyTickCounter++;
     if (enemyTickCounter >= ENEMY_FETCH_RATE) {
         enemyTickCounter = 0;
-        lastEnemyFetchTime = currentTime;
-        enemyInterpolationFactor = 0;
         
-        // Save previous enemy positions for interpolation
-        previousEnemies = enemies.map(e => ({x: e.x, y: e.y}));
-        
-        // Fetch enemies and doors to update their positions
-        Promise.all([
-            fetch(`${GAME_API_URL}/enemies`).then(r => r.json()),
-            fetch(`${GAME_API_URL}/doors`).then(r => r.json())
-        ])
-        .then(([enemyList, doorList]) => {
-            enemies = enemyList;
-            doors = doorList;
-        })
-        .catch(error => console.error('Error fetching enemies/doors:', error));
+        // Only fetch if no fetch is currently pending
+        if (!pendingEnemyFetch) {
+            lastEnemyFetchTime = currentTime;
+            enemyInterpolationFactor = 0;
+            
+            // Save previous enemy positions for interpolation
+            previousEnemies = enemies.map(e => ({x: e.x, y: e.y}));
+            
+            // Fetch enemies and doors to update their positions
+            // Use deduplication - if a fetch is already in flight, don't send another
+            pendingEnemyFetch = Promise.all([
+                fetch(`${GAME_API_URL}/enemies`).then(r => r.json()),
+                fetch(`${GAME_API_URL}/doors`).then(r => r.json())
+            ])
+            .then(([enemyList, doorList]) => {
+                enemies = enemyList;
+                doors = doorList;
+                lastSuccessfulFetchTime = currentTime;
+                pendingEnemyFetch = null;
+            })
+            .catch(error => {
+                console.error('Error fetching enemies/doors:', error);
+                pendingEnemyFetch = null;
+            });
+        }
     } else {
         // Update interpolation factor between fetches
         const timeSinceLastFetch = currentTime - lastEnemyFetchTime;

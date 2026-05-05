@@ -327,6 +327,7 @@ public class GameModel {
     /**
      * Player performs a sword attack in the given direction.
      * Checks for enemies and damages them with knockback.
+     * Uses tolerance-based hit detection to account for smooth decimal movement.
      */
     public void attackInDirection(String direction) {
         int attackX = playerX;
@@ -358,10 +359,20 @@ public class GameModel {
             return;
         }
 
+        // Use tolerance-based hit detection to handle smooth decimal movement
+        // Enemy positions might be offset slightly due to movement speed
+        double hitTolerance = 0.6;  // Tolerance for hit detection
+        
         for (Enemy enemy : currentRoom.getEnemies()) {
-            if (enemy.getHealth() > 0 && enemy.getX() == attackX && enemy.getY() == attackY) {
-                enemy.takeDamage(10, attackDir);
-                break;
+            if (enemy.getHealth() > 0) {
+                // Check if enemy is close enough to the attack tile
+                double distX = Math.abs(enemy.getXRaw() - attackX);
+                double distY = Math.abs(enemy.getYRaw() - attackY);
+                
+                if (distX < hitTolerance && distY < hitTolerance) {
+                    enemy.takeDamage(10, attackDir);
+                    break;
+                }
             }
         }
 
